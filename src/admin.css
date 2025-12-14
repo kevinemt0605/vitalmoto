@@ -1,0 +1,22 @@
+/* Combined admin styles based on original admin/dashboard.css and user_profile.css */
+:root{--admin-bg:#f6f8fa;--card-bg:#fff;--muted:#666;--accent:#2980b9}
+body{background:var(--admin-bg);font-family:Montserrat, 'Segoe UI', Arial, sans-serif;margin:0;padding:0}
+.admin-container{max-width:1200px;margin:2rem auto;padding:2rem;background:var(--card-bg);border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+.metrics{display:flex;gap:1.5rem;margin-bottom:1.5rem}
+.metric-card{flex:1;background:#f5f7fa;border-radius:8px;padding:1rem;text-align:center}
+.metric-card h3{margin:0;font-size:1.6rem;color:var(--accent)}
+.metric-card p{margin:6px 0 0 0;color:var(--muted)}
+.chart-container{width:100%;max-width:600px;margin:1.5rem auto}
+.search-filter-row{display:flex;gap:10px;align-items:center;margin:1rem 0}
+.search-filter-row input[type="text"],.search-filter-row select{padding:8px;border:1px solid #ddd;border-radius:6px}
+.users-table{width:100%;border-collapse:collapse;margin-bottom:1.2rem;background:#fafbfc;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.03)}
+.users-table th,.users-table td{border:1px solid #e6e9ee;padding:0.8rem 1rem;text-align:left;font-size:0.98rem}
+.users-table th{background:#e9ecef;color:#222;font-weight:600}
+.users-table tbody tr:nth-child(even){background:#f6f8fa}
+.users-table tbody tr{transition:background 0.12s ease;cursor:pointer}
+.users-table tbody tr:hover{background:#eef3f8}
+.user-detail h3{margin-top:0}
+.modal-overlay{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:20000;padding:24px}
+.modal-content{background:#fff;border-radius:10px;max-width:1000px;width:100%;max-height:90vh;overflow:auto;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,0.2);position:relative}
+.modal-close{position:absolute;right:12px;top:12px;background:transparent;border:none;font-size:20px;cursor:pointer}
+@media (max-width:768px){.metrics{flex-direction:column}.users-table th,.users-table td{padding:0.6rem}.admin-container{padding:1rem}}

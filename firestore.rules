@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // helper: allow access if authenticated user is admin
+    function isAdmin() {
+      return request.auth != null && (
+        // prefer custom claim 'role' if you set it via admin SDK
+        request.auth.token.role == 'admin' ||
+        // fallback: check user's document role (requires read permission to your own user doc)
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Users: user can manage their own profile; admin can read/update any user
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow update: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow delete: if false; // disallow deletes from client
+    }
+
+    // Vehicles: owner can manage; admin can read and manage for administration
+    match /vehicles/{vehicleId} {
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      allow read: if request.auth != null && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow update, delete: if request.auth != null && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+  }
+}
