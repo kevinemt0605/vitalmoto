@@ -1,7 +1,18 @@
 import React from 'react';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, getDocs, doc, getDoc, query, where, orderBy, limit, startAfter } from 'firebase/firestore';
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  getDoc, 
+  query, 
+  where, 
+  orderBy, 
+  limit, 
+  startAfter, 
+  getCountFromServer 
+} from 'firebase/firestore';
 import showToast from '../utils/toast';
 import '../admin.css';
 
@@ -9,141 +20,249 @@ export default function Admin(){
   const [user, setUser] = React.useState(null);
   const [isAdmin, setIsAdmin] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  
+  // Datos de la tabla y métricas
   const [users, setUsers] = React.useState([]);
-  const [filtered, setFiltered] = React.useState([]);
-  const [vehiclesCount, setVehiclesCount] = React.useState(0);
+  const [metrics, setMetrics] = React.useState({
+    totalUsers: 0,
+    paidUsers: 0,
+    unpaidUsers: 0,
+    totalVehicles: 0
+  });
 
-  // paging/search/filter state
+  // Paginación y Filtros
+  const [lastVisible, setLastVisible] = React.useState(null); // Cursor para "Siguiente"
+  const [pageNumber, setPageNumber] = React.useState(1);
+  const pageSize = 10;
+
   const [search, setSearch] = React.useState('');
   const [roleFilter, setRoleFilter] = React.useState('all');
   const [paymentFilter, setPaymentFilter] = React.useState('all');
-  const [pageSize] = React.useState(10);
-  const [currentPage, setCurrentPage] = React.useState(1);
 
-  // selected user detail
+  // Detalles del usuario seleccionado (Modal)
   const [selectedUser, setSelectedUser] = React.useState(null);
   const [selectedUserVehicles, setSelectedUserVehicles] = React.useState([]);
+  const [loadingDetail, setLoadingDetail] = React.useState(false);
 
+  // 1. Verificar Rol de Admin
   React.useEffect(()=>{
     const unsub = onAuthStateChanged(auth, async (u)=>{
-      setUser(u);
-      setLoading(true);
       if(!u){
+        setUser(null);
         setIsAdmin(false);
-        setUsers([]);
-        setFiltered([]);
-        setVehiclesCount(0);
         setLoading(false);
         return;
       }
+      setUser(u);
       try{
-        const profileSnap = await getDoc(doc(db,'users', u.uid));
-        const profile = profileSnap.exists()? profileSnap.data() : null;
+        // Verificar rol en documento de usuario
+        const profileSnap = await getDoc(doc(db, 'users', u.uid));
+        const profile = profileSnap.exists() ? profileSnap.data() : null;
+        
         if(profile && profile.role === 'admin'){
           setIsAdmin(true);
-          // load all users (small admin panel - if DB large, switch to server-side pagination)
-          const q = await getDocs(collection(db,'users'));
-          const list = [];
-          q.forEach(s=> list.push({ id: s.id, ...s.data() }));
-          setUsers(list.sort((a,b)=> (a.email||'').localeCompare(b.email||'')));
-          setFiltered(list);
-          // vehicles count
-          try{
-            const v = await getDocs(collection(db,'vehicles'));
-            setVehiclesCount(v.size);
-          }catch(e){ console.warn('Could not load vehicles count', e); setVehiclesCount(0) }
-        }else{
+          // Cargar métricas y primera página
+          loadMetrics();
+          loadUsers(true); // true = reset pagination
+        } else {
           setIsAdmin(false);
-          setUsers([]);
-          setFiltered([]);
-          setVehiclesCount(0);
         }
-      }catch(err){
-        console.error('Admin load error', err);
-        showToast('Error cargando panel admin','error');
-        setIsAdmin(false);
-      }finally{ setLoading(false) }
+      } catch(err){
+        console.error('Error verificando admin:', err);
+        showToast('Error de permisos', 'error');
+      } finally {
+        setLoading(false);
+      }
     });
     return ()=> unsub();
-  },[]);
+  }, []);
 
-  // apply search/filters client-side
-  React.useEffect(()=>{
-    let list = [...users];
-    if(search && search.trim()){
-      const s = search.trim().toLowerCase();
-      list = list.filter(u => (u.email||'').toLowerCase().includes(s) || (u.fullname||'').toLowerCase().includes(s) || (u.id_number||'').toLowerCase().includes(s));
-    }
-    if(roleFilter !== 'all'){
-      list = list.filter(u => (u.role||'user') === roleFilter);
-    }
-    if(paymentFilter !== 'all'){
-      list = list.filter(u => (paymentFilter === 'paid') ? !!u.hasPaid : !u.hasPaid);
-    }
-    setFiltered(list);
-    setCurrentPage(1);
-  },[search, roleFilter, paymentFilter, users]);
+  // 2. Cargar Métricas (Optimizado con getCountFromServer)
+  const loadMetrics = async () => {
+    try {
+      const usersColl = collection(db, 'users');
+      const vehiclesColl = collection(db, 'vehicles');
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageItems = filtered.slice((currentPage-1)*pageSize, currentPage*pageSize);
+      // Ejecutamos conteos en paralelo
+      const [snapTotal, snapPaid, snapUnpaid, snapVehicles] = await Promise.all([
+        getCountFromServer(usersColl),
+        getCountFromServer(query(usersColl, where('hasPaid', '==', true))),
+        getCountFromServer(query(usersColl, where('hasPaid', '==', false))), 
+        getCountFromServer(vehiclesColl)
+      ]);
 
-  const loadUserDetail = async (uid)=>{
+      setMetrics({
+        totalUsers: snapTotal.data().count,
+        paidUsers: snapPaid.data().count,
+        unpaidUsers: snapUnpaid.data().count,
+        totalVehicles: snapVehicles.data().count
+      });
+    } catch (e) {
+      console.warn('Error cargando métricas:', e);
+    }
+  };
+
+  // 3. Cargar Usuarios (Paginado y Filtrado en Servidor)
+  const loadUsers = async (reset = false, direction = 'next') => {
+    setLoading(true);
+    try {
+      let q = collection(db, 'users');
+      let constraints = [];
+
+      // --- FILTROS ---
+      if(roleFilter !== 'all') {
+        constraints.push(where('role', '==', roleFilter));
+      }
+      
+      if(paymentFilter !== 'all') {
+        const isPaid = paymentFilter === 'paid';
+        constraints.push(where('hasPaid', '==', isPaid));
+      }
+
+      // Búsqueda por Email (Prefijo)
+      if(search.trim()) {
+        const term = search.trim().toLowerCase(); 
+        constraints.push(where('email', '>=', term));
+        constraints.push(where('email', '<=', term + '\uf8ff'));
+      } else {
+        // Orden por defecto solo si no estamos buscando
+        constraints.push(orderBy('created_at', 'desc'));
+      }
+
+      // --- PAGINACIÓN ---
+      constraints.push(limit(pageSize));
+
+      if (!reset) {
+        if (direction === 'next' && lastVisible) {
+          constraints.push(startAfter(lastVisible));
+        } 
+      }
+
+      // Construir Query final
+      const finalQuery = query(q, ...constraints);
+      const documentSnapshots = await getDocs(finalQuery);
+
+      if (documentSnapshots.empty && !reset && direction === 'next') {
+        showToast('No hay más resultados', 'info');
+        setLoading(false);
+        return;
+      }
+
+      const list = [];
+      documentSnapshots.forEach(doc => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+
+      setUsers(list);
+
+      // Actualizar cursor para la próxima página
+      const last = documentSnapshots.docs[documentSnapshots.docs.length - 1];
+      setLastVisible(last);
+
+      if (reset) {
+        setPageNumber(1);
+      } else if (direction === 'next') {
+        setPageNumber(prev => prev + 1);
+      } 
+      
+    } catch (err) {
+      console.error('Error cargando usuarios:', err);
+      if(err.message && err.message.includes('index')){
+        showToast('Falta un índice en Firebase. Revisa la consola (F12) y abre el link.', 'warn');
+      } else {
+        showToast('Error cargando datos', 'error');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Manejadores de eventos
+  const handleSearch = (e) => {
+    e.preventDefault();
+    loadUsers(true);
+  };
+
+  const handleNextPage = () => {
+    if(lastVisible) {
+      loadUsers(false, 'next');
+    }
+  };
+
+  // Resetear filtros recarga todo
+  React.useEffect(() => {
+    if(isAdmin) loadUsers(true);
+  }, [roleFilter, paymentFilter]);
+
+  // Cargar detalles de usuario
+  const openUserDetail = async (uid) => {
+    setLoadingDetail(true);
     setSelectedUser(null);
     setSelectedUserVehicles([]);
     try{
       const s = await getDoc(doc(db,'users', uid));
       if(s.exists()) setSelectedUser({ id: s.id, ...s.data() });
-      // load vehicles
+      
       const q = query(collection(db,'vehicles'), where('ownerId','==', uid));
       const v = await getDocs(q);
       const list = [];
       v.forEach(d=> list.push({id: d.id, ...d.data()}));
       setSelectedUserVehicles(list);
-    }catch(e){ showToast('Error cargando detalle de usuario','error'); }
-  }
+    }catch(e){ showToast('Error cargando detalles','error'); }
+    finally { setLoadingDetail(false); }
+  };
 
-  if(loading) return <div className="card">Cargando...</div>;
-  if(!user) return <div className="card">Acceso denegado. Debes iniciar sesión como administrador.</div>;
-  if(!isAdmin) return <div className="card">No tienes permisos para ver este panel.</div>;
+  if(loading) return <div className="admin-container" style={{textAlign:'center', padding: 40}}>Cargando panel...</div>;
+  if(!user || !isAdmin) return <div className="admin-container">No tienes permisos de administrador.</div>;
 
   return (
     <main className="admin-container">
-      <h2>Panel de Administración</h2>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem'}}>
+        <h2>Panel de Administración</h2>
+        <button onClick={() => loadUsers(true)} className="btn-secundario" style={{fontSize:'0.9rem'}}>↻ Recargar</button>
+      </div>
+
       <div className="metrics">
         <div className="metric-card">
-          <h3 id="totalUsers">{users.length}</h3>
-          <p>Usuarios Registrados</p>
+          <h3>{metrics.totalUsers}</h3>
+          <p>Usuarios</p>
         </div>
         <div className="metric-card">
-          <h3 id="totalVehicles">{vehiclesCount}</h3>
-          <p>Vehículos Registrados</p>
+          <h3>{metrics.totalVehicles}</h3>
+          <p>Vehículos</p>
         </div>
         <div className="metric-card">
-          <h3 id="paidUsers">{users.filter(u => !!u.hasPaid).length}</h3>
-          <p>Usuarios que han pagado</p>
+          <h3>{metrics.paidUsers}</h3>
+          <p>Pagados</p>
         </div>
         <div className="metric-card">
-          <h3 id="unpaidUsers">{users.filter(u => !u.hasPaid).length}</h3>
-          <p>Usuarios sin pagar</p>
+          <h3>{metrics.unpaidUsers}</h3>
+          <p>Pendientes</p>
         </div>
       </div>
 
       <section className="vehicles-section" style={{marginTop:12}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
-          <h3>Listado de Usuarios</h3>
-          <div className="admin-controls" style={{display:'flex',gap:8,alignItems:'center'}}>
-            <input className="search-input" placeholder="Buscar por email, nombre o ID" value={search} onChange={e=>setSearch(e.target.value)} />
-            <select className="filter-select" value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}>
-              <option value="all">Todos los roles</option>
-              <option value="admin">Admin</option>
-              <option value="user">User</option>
-            </select>
-            <select className="filter-select" value={paymentFilter} onChange={e=>setPaymentFilter(e.target.value)}>
-              <option value="all">Todos</option>
-              <option value="paid">Pagados</option>
-              <option value="unpaid">No pagados</option>
-            </select>
-          </div>
+        <div className="admin-controls" style={{display:'flex',gap:8,alignItems:'center', flexWrap:'wrap', marginBottom: 12}}>
+          <form onSubmit={handleSearch} style={{display:'flex', gap:8}}>
+            <input 
+              className="search-input" 
+              placeholder="Buscar email exacto..." 
+              value={search} 
+              onChange={e=>setSearch(e.target.value)} 
+            />
+            <button type="submit" className="btn-primario btn-sm">Buscar</button>
+          </form>
+
+          <select className="filter-select" value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}>
+            <option value="all">Rol: Todos</option>
+            <option value="admin">Admin</option>
+            <option value="user">Usuario</option>
+          </select>
+          <select className="filter-select" value={paymentFilter} onChange={e=>setPaymentFilter(e.target.value)}>
+            <option value="all">Pago: Todos</option>
+            <option value="paid">Pagado</option>
+            <option value="unpaid">No pagado</option>
+          </select>
         </div>
 
         <div className="admin-table-container" style={{overflowX:'auto', marginTop:8}}>
@@ -154,74 +273,103 @@ export default function Admin(){
                 <th>Nombre</th>
                 <th>Rol</th>
                 <th>Pagó</th>
-                <th>Último pago</th>
                 <th>Registrado</th>
               </tr>
             </thead>
             <tbody>
-              {pageItems.map(u=> (
-                <tr key={u.id} className="admin-row" onClick={()=>loadUserDetail(u.id)}>
+              {users.map(u=> (
+                <tr key={u.id} className="admin-row" onClick={()=>openUserDetail(u.id)}>
                   <td>{u.email}</td>
                   <td>{u.fullname || '-'}</td>
-                  <td>{u.role || 'user'}</td>
-                  <td>{u.hasPaid? 'Sí':'No'}</td>
-                  <td>{u.lastPayment? new Date(u.lastPayment).toLocaleString('es-ES') : 'Nunca'}</td>
-                  <td>{u.created_at? new Date(u.created_at).toLocaleString('es-ES') : '-'}</td>
+                  <td>
+                    <span style={{
+                      padding:'2px 8px', 
+                      borderRadius:'12px', 
+                      background: u.role==='admin'?'#d1ecf1':'#eee',
+                      color: u.role==='admin'?'#0c5460':'#333',
+                      fontSize:'0.85rem'
+                    }}>
+                      {u.role || 'user'}
+                    </span>
+                  </td>
+                  <td>{u.hasPaid? '✅':'❌'}</td>
+                  <td>{u.created_at? new Date(u.created_at).toLocaleDateString() : '-'}</td>
                 </tr>
               ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan="5" style={{textAlign:'center', padding: 20}}>No se encontraron usuarios</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
-        <div className="pagination" style={{marginTop:12,display:'flex',gap:8,alignItems:'center'}}>
-          <button className="btn-secundario" disabled={currentPage<=1} onClick={()=>setCurrentPage(p=>Math.max(1,p-1))}>Anterior</button>
-          <div>Página {currentPage} / {totalPages}</div>
-          <button className="btn-secundario" disabled={currentPage>=totalPages} onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))}>Siguiente</button>
+        <div className="pagination" style={{marginTop:12,display:'flex',gap:8,alignItems:'center', justifyContent:'center'}}>
+          <button 
+            className="btn-secundario" 
+            onClick={() => loadUsers(true)} 
+            disabled={pageNumber === 1}
+          >
+            Inicio
+          </button>
+          <span>Página {pageNumber}</span>
+          <button 
+            className="btn-secundario" 
+            onClick={handleNextPage}
+            disabled={users.length < pageSize} 
+          >
+            Siguiente
+          </button>
         </div>
       </section>
 
+      {/* MODAL DE DETALLE */}
       {selectedUser && (
         <div className="modal-overlay" onClick={()=>{ setSelectedUser(null); setSelectedUserVehicles([]); }}>
           <div className="modal-content" onClick={e=>e.stopPropagation()}>
             <button className="modal-close" onClick={()=>{ setSelectedUser(null); setSelectedUserVehicles([]); }}>✕</button>
-            <h3>Detalle: {selectedUser.email}</h3>
-            <div style={{display:'flex',gap:16,alignItems:'flex-start',marginTop:8}}>
-              <div style={{minWidth:160}}>
-                {selectedUser.photoURL ? <img src={selectedUser.photoURL} alt="user" style={{width:160,height:160,objectFit:'cover',borderRadius:8}} /> : <div style={{width:160,height:160,background:'#eee',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center'}}>Sin foto</div>}
-              </div>
-              <div style={{flex:1}}>
-                <p><strong>Nombre:</strong> {selectedUser.fullname}</p>
-                <p><strong>Identificación:</strong> {selectedUser.id_type} - {selectedUser.id_number}</p>
-                <p><strong>Teléfonos:</strong> {selectedUser.phone_local} / {selectedUser.phone_mobile}</p>
-                <p><strong>Email:</strong> {selectedUser.email}</p>
-                <p><strong>Dirección Habitación:</strong> {selectedUser.address_home}</p>
-                <p><strong>Banco / Cuenta:</strong> {selectedUser.bank} / {selectedUser.account_number}</p>
-                <p><strong>Pagó:</strong> {selectedUser.hasPaid? 'Sí':'No'}</p>
-                <p><strong>Último pago:</strong> {selectedUser.lastPayment? new Date(selectedUser.lastPayment).toLocaleString('es-ES') : 'Nunca'}</p>
-              </div>
-            </div>
-
-            <div style={{marginTop:12}}>
-              <h4>Vehículos del usuario</h4>
-              {selectedUserVehicles.length === 0 && <div>No tiene vehículos registrados</div>}
-              <div style={{display:'flex',flexWrap:'wrap',gap:12,marginTop:8}}>
-                {selectedUserVehicles.map(v=> (
-                  <div key={v.id} style={{width:300,border:'1px solid #e0e0e0',padding:8,borderRadius:8}}>
-                    <div style={{display:'flex',gap:8}}>
-                      {v.docURL && <img src={v.docURL} alt="doc" style={{width:120,height:120,objectFit:'cover',borderRadius:6}} />}
-                      {v.bikeURL && <img src={v.bikeURL} alt="bike" style={{width:160,height:120,objectFit:'cover',borderRadius:6}} />}
-                    </div>
-                    <p style={{marginTop:8}}><strong>{v.brand} {v.model}</strong></p>
-                    <p>Placa: {v.license_plate}</p>
-                    <p>Año: {v.year} - Cil: {v.displacement}</p>
-                    <p style={{fontSize:12,color:'#666'}}>{v.observations}</p>
-                    {v.createdAt && <p style={{fontSize:11, color:'#888', marginTop: 4}}>
-                      Registrado: {new Date(v.createdAt).toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </p>}
+            {loadingDetail ? <p>Cargando detalles...</p> : (
+              <>
+                <h3>Detalle: {selectedUser.email}</h3>
+                <div style={{display:'flex',gap:16,alignItems:'flex-start',marginTop:8, flexWrap:'wrap'}}>
+                  <div style={{minWidth:120}}>
+                    {selectedUser.photoURL ? 
+                      <img src={selectedUser.photoURL} alt="user" style={{width:120,height:120,objectFit:'cover',borderRadius:8}} /> : 
+                      <div style={{width:120,height:120,background:'#eee',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center'}}>Sin foto</div>
+                    }
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div style={{flex:1}}>
+                    <p><strong>Nombre:</strong> {selectedUser.fullname}</p>
+                    <p><strong>ID:</strong> {selectedUser.id_type}-{selectedUser.id_number}</p>
+                    <p><strong>Teléfonos:</strong> {selectedUser.phone_local} / {selectedUser.phone_mobile}</p>
+                    <p><strong>Dirección:</strong> {selectedUser.address_home}</p>
+                    <p><strong>Cuenta:</strong> {selectedUser.bank} - {selectedUser.account_number}</p>
+                  </div>
+                </div>
+
+                <div style={{marginTop:20, borderTop:'1px solid #eee', paddingTop:10}}>
+                  <h4>Vehículos ({selectedUserVehicles.length})</h4>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:12,marginTop:8}}>
+                    {selectedUserVehicles.map(v=> (
+                      <div key={v.id} style={{width:'100%', maxWidth:300, border:'1px solid #e0e0e0',padding:10,borderRadius:8}}>
+                        <div style={{display:'flex',gap:8}}>
+                          {v.bikeURL ? 
+                            <img src={v.bikeURL} alt="bike" style={{width:80,height:60,objectFit:'cover',borderRadius:4}} /> : 
+                            <div style={{width:80,height:60,background:'#eee'}}></div>
+                          }
+                          <div>
+                            <p style={{fontWeight:'bold', margin:0}}>{v.brand} {v.model}</p>
+                            <p style={{fontSize:'0.9rem', margin:0}}>{v.license_plate}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {selectedUserVehicles.length === 0 && <p style={{color:'#777'}}>Este usuario no tiene vehículos registrados.</p>}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
