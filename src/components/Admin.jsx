@@ -215,6 +215,9 @@ export default function Admin(){
                     <p>Placa: {v.license_plate}</p>
                     <p>Año: {v.year} - Cil: {v.displacement}</p>
                     <p style={{fontSize:12,color:'#666'}}>{v.observations}</p>
+                    {v.createdAt && <p style={{fontSize:11, color:'#888', marginTop: 4}}>
+                      Registrado: {new Date(v.createdAt).toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </p>}
                   </div>
                 ))}
               </div>

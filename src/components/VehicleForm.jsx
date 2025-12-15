@@ -31,56 +31,39 @@ export default function VehicleForm(){
   const onChange = e => setForm({...form,[e.target.name]: e.target.value});
 
   const uploadImage = async (file, path, setProgress) => {
-    const options = {maxSizeMB:0.5, maxWidthOrHeight:1600, useWebWorker:true};
-    const compressed = await imageCompression(file, options);
-    const storageRef = ref(storage, path);
-    console.log('Uploading image, user:', auth.currentUser && auth.currentUser.uid, 'to bucket:', firebaseConfig.storageBucket, 'path:', path);
-    const task = uploadBytesResumable(storageRef, compressed);
-    return new Promise((resolve,reject)=>{
-      task.on('state_changed', (snapshot)=>{
-        if(setProgress && snapshot && snapshot.totalBytes){
-          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          try{ setProgress(pct); }catch(e){}
-        }
-      }, async (err)=>{
-        console.error('Upload error', err);
-        // If unauthorized, try a fallback storage instance using gs://<projectId>.appspot.com
-        if(err && err.code && err.code.includes('storage/unauthorized')){
-          try{
-            const fallbackBucket = `gs://${firebaseConfig.projectId}.appspot.com`;
-            console.warn('Attempting fallback upload to', fallbackBucket);
-            const fallbackStorage = getStorageSDK(firebaseApp, fallbackBucket);
-            const fallbackRef = ref(fallbackStorage, path);
-            const fallbackTask = uploadBytesResumable(fallbackRef, compressed);
-            fallbackTask.on('state_changed', (snapshot)=>{
-              if(setProgress && snapshot && snapshot.totalBytes){
-                const pct2 = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                try{ setProgress(pct2); }catch(e){}
+      const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1600, useWebWorker: true };
+      const compressed = await imageCompression(file, options);
+  
+      // Forzamos el uso del bucket correcto, como intentaba hacer la lógica de "fallback".
+      // Esto hace el código más robusto y evita problemas de configuración.
+      const bucketUrl = `gs://${firebaseConfig.storageBucket}`;
+      const storageInstance = getStorageSDK(firebaseApp, bucketUrl);
+      const storageRef = ref(storageInstance, path);
+  
+      console.log('Uploading image, user:', auth.currentUser?.uid, 'to bucket:', bucketUrl, 'path:', path);
+      const task = uploadBytesResumable(storageRef, compressed);
+  
+      return new Promise((resolve, reject) => {
+          task.on('state_changed',
+              (snapshot) => {
+                  if (setProgress && snapshot.totalBytes > 0) {
+                      const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                      setProgress(pct);
+                  }
+              },
+              (error) => {
+                  console.error('Upload error:', error.code, error.message);
+                  const friendlyMessage = (error.code === 'storage/unauthorized')
+                      ? 'Error: No tienes permiso para subir archivos. Revisa tus reglas de Storage en Firebase.'
+                      : `Error al subir: ${error.message}`;
+                  reject(new Error(friendlyMessage));
+              },
+              async () => {
+                  const downloadURL = await getDownloadURL(task.snapshot.ref);
+                  resolve(downloadURL);
               }
-            }, (err2)=>{
-              console.error('Fallback upload error', err2);
-              reject(new Error(`${err2.code || 'error'}: ${err2.message || err2}`));
-            }, async ()=>{
-              const url2 = await getDownloadURL(fallbackTask.snapshot.ref);
-              resolve(url2);
-            });
-            return;
-          }catch(fe){
-            console.error('Fallback failed', fe);
-            // fall through to reject original
-          }
-        }
-        // Provide clearer message for auth/permission issues
-        if(err && err.code){
-          reject(new Error(`${err.code}: ${err.message}`));
-        }else{
-          reject(err);
-        }
-      }, async ()=>{
-        const url = await getDownloadURL(task.snapshot.ref);
-        resolve(url);
-      })
-    })
+          );
+      });
   }
 
   const submit = async (e)=>{
@@ -126,7 +109,7 @@ export default function VehicleForm(){
   showToast('Vehículo registrado','success');
       // navigate to profile when done
       navigate('/profile');
-    }catch(err){alert(err.message)}
+    }catch(err){showToast(err.message, 'error')}
     finally{setLoading(false)}
   }
 
