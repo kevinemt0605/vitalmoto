@@ -45,7 +45,7 @@ export default function Home(){
         <div className="contenedor">
             <h3>Contáctanos</h3>
             <p>¿Listo para empezar tu próximo proyecto con nosotros?</p>
-            <p>Email: <a href="mailto:contacto@miempresa.com">contacto@miempresa.com</a> | Teléfono: +123 456 7890</p>
+            <p>Email: <a href="mailto:vitalmoto.sistemas@outlook.com">vitalmoto.sistemas@outlook.com</a> | Teléfono: +123 456 7890</p>
         </div>
       </footer>
     </main>
