@@ -1,26 +1,21 @@
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
-    // helper: admin check via auth custom claim
-    function isAdmin() {
-      return request.auth != null && request.auth.token.role == 'admin';
-    }
 
-    // Profile photos: owner can read/write, admin can read
-    match /profiles/{userId}/{allPaths=**} {
+    // Regla para las fotos de perfil
+    // Permite que cualquiera lea la foto, pero solo el dueño del perfil puede subirla/actualizarla.
+    match /profiles/{userId}/profile.jpg {
+      allow read;
       allow write: if request.auth != null && request.auth.uid == userId;
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
 
-    // Vehicle images: owner can write, owner or admin can read
-    match /vehicles/{userId}/{allPaths=**} {
+    // Regla para las fotos de los vehículos
+    // Permite que cualquiera lea las fotos, pero solo el dueño puede subir archivos a su propia carpeta.
+    match /vehicles/{userId}/{fileName} {
+      allow read;
       allow write: if request.auth != null && request.auth.uid == userId;
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
 
-    // default deny
-    match /{allPaths=**} {
-      allow read, write: if false;
-    }
   }
 }

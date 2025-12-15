@@ -1,9 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
-import { auth } from '../firebase';
-import { doc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
+import { doc, setDoc, getDoc } from 'firebase/firestore'; 
 import { isEmailValid, isIdNumberValid, isPhoneValid, isAccountNumberValid } from '../utils/validators';
 import showToast from '../utils/toast';
 
@@ -31,38 +30,48 @@ export default function Register(){
     e.preventDefault();
     setLoading(true);
     try{
-      // Basic validations
+      // --- VALIDACIONES LOCALES ---
       if(!isEmailValid(form.email)) throw new Error('Email inválido');
       if(!isIdNumberValid(form.id_number)) throw new Error('Número de identificación inválido');
       if(!isPhoneValid(form.phone_local) || !isPhoneValid(form.phone_mobile)) throw new Error('Teléfono inválido');
-  if(!isAccountNumberValid(form.account_number)) throw new Error('Número de cuenta inválido (solo dígitos, 6-30)');
-  if(form.password !== form.confirm_password) throw new Error('Las contraseñas no coinciden');
+      if(!isAccountNumberValid(form.account_number)) throw new Error('Número de cuenta inválido (solo dígitos, 6-30)');
+      if(form.password !== form.confirm_password) throw new Error('Las contraseñas no coinciden');
 
-      // Check uniqueness of id_number in users collection
-      const q = query(collection(db,'users'), where('id_number','==', form.id_number));
-      const snap = await getDocs(q);
-      if(!snap.empty){
-        throw new Error('Ya existe un usuario con ese número de identificación');
+      // --- VALIDACIÓN DE UNICIDAD (Segura) ---
+      // Creamos un ID compuesto, ej: "V-12345678"
+      const compositeId = `${form.id_type}-${form.id_number}`;
+      const idRegistryRef = doc(db, 'id_registry', compositeId);
+      
+      // Intentamos leer este documento. Las reglas permiten 'get' público.
+      const idSnapshot = await getDoc(idRegistryRef);
+      if (idSnapshot.exists()) {
+        throw new Error(`La cédula ${form.id_type}-${form.id_number} ya está registrada.`);
       }
+
+      // --- CREACIÓN DE USUARIO (Auth) ---
       const userCred = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      
+      // Actualizar nombre visual
       await updateProfile(userCred.user,{displayName: form.fullname});
-      // send verification email
+      
+      // Enviar email de verificación
       await sendEmailVerification(userCred.user);
 
-      // Redirect immediately to profile so user sees the app UX even if Firestore write takes a moment
+      // Redirigir inmediatamente
       nav('/profile');
 
-      // Try to save the profile to Firestore in background with retries in case auth token
-      // hasn't propagated to rules yet. This avoids blocking the UI and reduces "permission" errors.
+      // --- GUARDADO EN FIRESTORE (Background) ---
       (async function saveUserDocWithRetries(){
         const maxRetries = 3;
         const delay = ms => new Promise(res => setTimeout(res, ms));
         let lastErr = null;
+
         for(let attempt=1; attempt<=maxRetries; attempt++){
           try{
-            // Force refresh token on first try and on subsequent retries
-            try{ await userCred.user.getIdToken(true); }catch(e){ /* continue to attempt write */ }
+            // Forzar refresco de token
+            try{ await userCred.user.getIdToken(true); }catch(e){}
 
+            // 1. Guardar Perfil de Usuario
             await setDoc(doc(db,'users', userCred.user.uid),{
               fullname: form.fullname,
               id_type: form.id_type,
@@ -78,32 +87,35 @@ export default function Register(){
               last_login: null,
               photoURL: null,
               hasPaid: false,
-              lastPayment: null
+              lastPayment: null,
+              role: 'user'
             });
-            // Success: exit loop and log success
-            console.info('Firestore: user document created for', userCred.user.uid);
+
+            // 2. Guardar en Registro de IDs (Reservar la cédula)
+            // Esto evita que otro se registre con la misma cédula en el futuro
+            await setDoc(doc(db, 'id_registry', compositeId), {
+              uid: userCred.user.uid,
+              registeredAt: new Date().toISOString()
+            });
+            
+            console.info('Firestore: user and registry documents created');
             showToast('Perfil guardado correctamente.', 'success');
             return;
           }catch(err){
             lastErr = err;
             console.warn(`Firestore write attempt ${attempt} failed:`, err);
-            // If permission error or unauthenticated, wait and retry; otherwise stop retrying
             const code = (err && (err.code || err.message || '')).toString().toLowerCase();
             if(code.includes('permission') || code.includes('unauthenticated') || attempt < maxRetries){
-              // small backoff
-              await delay(800 * attempt);
+              await delay(1000 * attempt);
               continue;
             }else{
               break;
             }
           }
         }
-        // After retries, if still failing, show toast so developer/user can inspect rules
         if(lastErr){
           const msg = lastErr && (lastErr.message || lastErr.toString()) || 'Error desconocido';
-          const code = lastErr && (lastErr.code || '').toString();
-          showToast(`No se pudo guardar el perfil en Firestore: ${code} ${msg}`, 'error');
-          console.error('Firestore save user error:', {code, message: msg, raw: lastErr});
+          showToast(`No se pudo completar el registro en base de datos: ${msg}`, 'error');
         }
       })();
     }catch(err){

@@ -1,11 +1,55 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // MVP: reglas abiertas para desarrollo/entrega rápida.
-    // WARNING: Esto permite a cualquiera leer y escribir cualquier documento.
-    // Revertir a reglas más restrictivas lo antes posible.
-    match /{document=**} {
-      allow read, write: if true;
+
+    // Funciones auxiliares
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      // Opción A: Si usas Custom Claims (más seguro, pero requiere backend)
+      // return request.auth.token.role == 'admin';
+      
+      // Opción B: Leer el documento del usuario (válido para este MVP)
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // --- COLECCIÓN USERS ---
+    match /users/{userId} {
+      // 1. Lectura: El dueño puede ver su perfil, el admin puede ver todos
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      
+      // 2. Creación: Cualquiera autenticado puede crear su propio documento (Registro)
+      // Validamos que no puedan asignarse el rol de admin al crearlo
+      allow create: if isSignedIn() && isOwner(userId) 
+                    && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'user');
+
+      // 3. Actualización: El dueño puede editar sus datos
+      // IMPORTANTE: Prevenir que el usuario cambie su propio campo 'role' a 'admin'
+      allow update: if isSignedIn() && isOwner(userId) 
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                        ['fullname', 'phone_local', 'phone_mobile', 'address_home', 'address_office', 'bank', 'account_number', 'photoURL', 'last_login']
+                    );
+      
+      // Admin tiene poder total de escritura (para promover usuarios, banear, etc)
+      allow write: if isSignedIn() && isAdmin();
+    }
+
+    // --- COLECCIÓN VEHICLES ---
+    match /vehicles/{vehicleId} {
+      // Leer: El dueño o el admin
+      allow read: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      
+      // Crear: Solo si asignas el ownerId a ti mismo
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      
+      // Actualizar/Borrar: Solo el dueño o admin
+      allow update, delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
   }
 }

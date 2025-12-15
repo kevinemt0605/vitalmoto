@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { auth, storage, db, firebaseConfig, default as firebaseApp } from '../firebase';
 import { ref, uploadBytesResumable, getDownloadURL, getStorage as getStorageSDK } from 'firebase/storage';
 import imageCompression from 'browser-image-compression';
-import { collection, addDoc, updateDoc, doc, query, where, getDocs } from 'firebase/firestore';
+import { collection, setDoc, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { isLicensePlateValid, isDisplacementValid, isYearValid } from '../utils/validators';
 import showToast from '../utils/toast';
 
@@ -57,7 +57,7 @@ export default function VehicleForm(){
 
   const onChange = e => setForm({...form,[e.target.name]: e.target.value});
 
-  // --- FUNCIÓN DE VALIDACIÓN DE ARCHIVOS MEJORADA ---
+  // --- FUNCIÓN DE VALIDACIÓN DE ARCHIVOS ---
   const validateAndSetFile = (e, setFileState) => {
     const file = e.target.files[0];
     if (!file) {
@@ -65,19 +65,17 @@ export default function VehicleForm(){
         return;
     }
 
-    // 1. Validar Extensión (Bloqueo SVG explícito)
     const fileName = file.name.toLowerCase();
     const validExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
     const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
 
     if (!hasValidExtension) {
         showToast('Error: Formato no permitido. Solo imágenes JPG, PNG, WEBP.', 'error');
-        e.target.value = ''; // Resetear el input
+        e.target.value = ''; 
         setFileState(null);
         return;
     }
 
-    // 2. Validar MIME Type
     const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     if (!validMimeTypes.includes(file.type)) {
         showToast('Error: El archivo no es una imagen válida.', 'error');
@@ -86,7 +84,6 @@ export default function VehicleForm(){
         return;
     }
 
-    // 3. Validar tamaño (Máximo 10MB)
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
         showToast('Error: La imagen es demasiado pesada (Máximo 10MB)', 'error');
@@ -95,7 +92,6 @@ export default function VehicleForm(){
         return;
     }
 
-    // Si pasa, guardamos el archivo en el estado
     setFileState(file);
   };
 
@@ -103,12 +99,11 @@ export default function VehicleForm(){
       const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1600, useWebWorker: true };
       const compressed = await imageCompression(file, options);
   
-      // Forzamos el uso del bucket correcto
       const bucketUrl = `gs://${firebaseConfig.storageBucket}`;
       const storageInstance = getStorageSDK(firebaseApp, bucketUrl);
       const storageRef = ref(storageInstance, path);
   
-      console.log('Uploading image, user:', auth.currentUser?.uid, 'to bucket:', bucketUrl, 'path:', path);
+      console.log('Uploading image to:', bucketUrl, path);
       const task = uploadBytesResumable(storageRef, compressed);
   
       return new Promise((resolve, reject) => {
@@ -122,7 +117,7 @@ export default function VehicleForm(){
               (error) => {
                   console.error('Upload error:', error.code, error.message);
                   const friendlyMessage = (error.code === 'storage/unauthorized')
-                      ? 'Error: No tienes permiso para subir archivos. Revisa tus reglas de Storage en Firebase.'
+                      ? 'Error: Permiso denegado al subir imagen.'
                       : `Error al subir: ${error.message}`;
                   reject(new Error(friendlyMessage));
               },
@@ -134,11 +129,28 @@ export default function VehicleForm(){
       });
   }
 
+  // --- VERIFICAR DISPONIBILIDAD (REGISTRO PÚBLICO) ---
+  const checkAvailability = async (key, value, currentVehicleId) => {
+    if(!value) return;
+    // Creamos un ID único para el registro, ej: "plate_AB123CD"
+    const registryId = `${key}_${value.toUpperCase().replace(/\s/g, '')}`;
+    const registryRef = doc(db, 'vehicle_identifiers', registryId);
+    
+    const snap = await getDoc(registryRef);
+    if(snap.exists()){
+      const data = snap.data();
+      // Si existe y pertenece a OTRO vehículo, es un error
+      if(data.vehicleId !== currentVehicleId){
+        throw new Error(`El valor '${value}' para ${key} ya está registrado en otro vehículo.`);
+      }
+    }
+    return { registryId, registryRef }; // Retornamos referencia para guardarlo luego
+  };
+
   const submit = async (e)=>{
     e.preventDefault();
     if(!auth.currentUser){ showToast('Debes iniciar sesión','warn'); return }
     
-    // Validación de imágenes: Si es nuevo registro, son obligatorias. Si es edición, son opcionales.
     if(!editingId && (!docFile || !bikeFile)){ 
       showToast('Sube ambas imágenes (documentos y moto)','warn'); 
       return; 
@@ -146,32 +158,23 @@ export default function VehicleForm(){
 
     setLoading(true);
     try{
-      // basic validations
+      // Validaciones básicas
       if(!isLicensePlateValid(form.license_plate)) throw new Error('Placa inválida');
       if(!isDisplacementValid(form.displacement)) throw new Error('Cilindraje inválido');
       if(!isYearValid(form.year)) throw new Error('Año inválido');
 
-      // uniqueness checks for license_plate, chassis_serial, engine_serial
-      const qPlate = query(collection(db,'vehicles'), where('license_plate','==', form.license_plate));
-      const snapPlate = await getDocs(qPlate);
-      if(!snapPlate.empty) {
-        const isSelf = editingId && snapPlate.docs[0].id === editingId;
-        if(!isSelf) throw new Error('Ya existe un vehículo con esa placa');
-      }
+      // --- DETERMINAR ID DEL VEHÍCULO ---
+      // Si es nuevo, generamos un ID cliente-side para poder reservar los identificadores
+      const targetVehicleId = editingId || doc(collection(db, 'vehicles')).id;
 
-      const qCh = query(collection(db,'vehicles'), where('chassis_serial','==', form.chassis_serial));
-      const snapCh = await getDocs(qCh);
-      if(!snapCh.empty) {
-        const isSelf = editingId && snapCh.docs[0].id === editingId;
-        if(!isSelf) throw new Error('Ya existe un vehículo con ese serial de chasis');
-      }
-
-      const qEn = query(collection(db,'vehicles'), where('engine_serial','==', form.engine_serial));
-      const snapEn = await getDocs(qEn);
-      if(!snapEn.empty) {
-         const isSelf = editingId && snapEn.docs[0].id === editingId;
-         if(!isSelf) throw new Error('Ya existe un vehículo con ese serial de motor');
-      }
+      // --- VERIFICAR UNICIDAD EN PARALELO ---
+      const checks = await Promise.all([
+        checkAvailability('plate', form.license_plate, targetVehicleId),
+        checkAvailability('chassis', form.chassis_serial, targetVehicleId),
+        checkAvailability('engine', form.engine_serial, targetVehicleId)
+      ]);
+      
+      // checks es un array de objetos { registryId, registryRef }
 
       // Preparar URLs
       let docURL = vehicleData?.docURL || null;
@@ -187,45 +190,59 @@ export default function VehicleForm(){
         bikeURL = await uploadImage(bikeFile, bikePath, setBikeProgress);
       }
       
+      // Datos a guardar
+      const vehiclePayload = {
+        ownerId: auth.currentUser.uid,
+        brand: form.brand,
+        model: form.model,
+        color: form.color,
+        license_plate: form.license_plate.toUpperCase(),
+        displacement: Number(form.displacement) || null,
+        year: Number(form.year) || null,
+        chassis_serial: form.chassis_serial.toUpperCase(),
+        engine_serial: form.engine_serial.toUpperCase(),
+        observations: form.observations || null,
+        docURL,
+        bikeURL,
+        // Si es edición, no tocamos createdAt, si es nuevo sí
+        ...(editingId ? {} : { createdAt: new Date().toISOString() })
+      };
+
       if(editingId) {
-        // --- MODO ACTUALIZACIÓN ---
-        await updateDoc(doc(db, 'vehicles', editingId), {
-            ...form,
-            displacement: Number(form.displacement) || null,
-            year: Number(form.year) || null,
-            docURL,
-            bikeURL,
-        });
-        showToast('Vehículo actualizado correctamente', 'success');
+        // ACTUALIZACIÓN
+        await updateDoc(doc(db, 'vehicles', editingId), vehiclePayload);
       } else {
-        // --- MODO CREACIÓN ---
-        await addDoc(collection(db,'vehicles'),{
-            ownerId: auth.currentUser.uid,
-            brand: form.brand,
-            model: form.model,
-            color: form.color,
-            license_plate: form.license_plate,
-            displacement: Number(form.displacement) || null,
-            year: Number(form.year) || null,
-            chassis_serial: form.chassis_serial,
-            engine_serial: form.engine_serial,
-            observations: form.observations || null,
-            docURL,
-            bikeURL,
-            createdAt: new Date().toISOString()
-        });
-        showToast('Vehículo registrado', 'success');
+        // CREACIÓN (Usamos setDoc con el ID que generamos antes)
+        await setDoc(doc(db, 'vehicles', targetVehicleId), vehiclePayload);
       }
 
+      // --- RESERVAR IDENTIFICADORES ---
+      // Guardamos en 'vehicle_identifiers' para bloquear estos valores a futuro
+      // Lo hacemos después de guardar el vehículo para asegurar consistencia principal
+      // (Idealmente sería una transacción, pero esto funciona para el MVP)
+      const registryPromises = checks.map(check => {
+        if(check) {
+          return setDoc(check.registryRef, { 
+            vehicleId: targetVehicleId,
+            updatedAt: new Date().toISOString()
+          });
+        }
+        return Promise.resolve();
+      });
+      await Promise.all(registryPromises);
+
+      showToast(editingId ? 'Vehículo actualizado' : 'Vehículo registrado', 'success');
       navigate('/profile');
+
     }catch(err){
-      showToast(err.message, 'error')
+      console.error(err);
+      showToast(err.message, 'error');
     }finally{
       setLoading(false)
     }
   }
 
-  // previews for selected files
+  // previews
   React.useEffect(()=>{
     if(docFile){
       const url = URL.createObjectURL(docFile);
