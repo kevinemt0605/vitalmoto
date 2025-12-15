@@ -1,9 +1,10 @@
 import React from 'react';
 import { auth, storage, db } from '../firebase';
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { getDownloadURL, ref, uploadBytesResumable, deleteObject } from 'firebase/storage';
 import imageCompression from 'browser-image-compression';
-import { doc, getDoc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { sendEmailVerification, onAuthStateChanged } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 import showToast from '../utils/toast';
 
 export default function Profile(){
@@ -12,8 +13,10 @@ export default function Profile(){
   const [loading, setLoading] = React.useState(false);
   const [vehicles, setVehicles] = React.useState([]);
   const [uploadProgress, setUploadProgress] = React.useState(0);
+  
+  const nav = useNavigate();
 
-  // Listen to auth state changes so the profile always reflects the current user (fixes back-navigation bug)
+  // Listen to auth state changes so the profile always reflects the current user
   React.useEffect(()=>{
     const unsub = onAuthStateChanged(auth, async (u)=>{
       setUser(u);
@@ -50,7 +53,25 @@ export default function Profile(){
   const handleFile = async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
-    if(!auth.currentUser) return alert('Debes iniciar sesión');
+    if(!auth.currentUser) return showToast('Debes iniciar sesión', 'warn');
+
+    // --- VALIDACIONES DE IMAGEN ---
+    // 1. Validar formatos específicos (Whitelist)
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) {
+        showToast('Formato no permitido. Solo se aceptan JPG, PNG o WEBP.', 'error');
+        e.target.value = ''; // Limpiar el input
+        return;
+    }
+
+    // 2. Validar tamaño (Máximo 10MB)
+    const maxSizeInBytes = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSizeInBytes) {
+        showToast('La imagen es demasiado pesada. El máximo permitido es 10MB.', 'error');
+        e.target.value = ''; // Limpiar el input
+        return;
+    }
+
     setLoading(true);
     setUploadProgress(0);
     try{
@@ -63,20 +84,62 @@ export default function Profile(){
         const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
         setUploadProgress(pct);
       },
-        (err)=>{alert(err.message); setLoading(false); setUploadProgress(0)},
+        (err)=>{
+            showToast(err.message, 'error'); 
+            setLoading(false); 
+            setUploadProgress(0);
+        },
         async ()=>{
           const url = await getDownloadURL(task.snapshot.ref);
           // save to firestore
           await updateDoc(doc(db,'users',auth.currentUser.uid),{photoURL: url});
-          alert('Foto de perfil actualizada');
+          showToast('Foto de perfil actualizada correctamente', 'success');
           setLoading(false);
           setUploadProgress(0);
         }
       )
-    }catch(err){alert(err.message); setLoading(false); setUploadProgress(0)}
+    }catch(err){
+        showToast(err.message, 'error'); 
+        setLoading(false); 
+        setUploadProgress(0);
+    }
   }
 
-    if(!user) return <div className="card">Debes iniciar sesión</div>
+  // --- LÓGICA PARA EDITAR Y ELIMINAR ---
+
+  const handleEditVehicle = (vehicle) => {
+    // Redirigimos al formulario pasando los datos del vehículo
+    nav('/vehicle', { state: { vehicleData: vehicle } });
+  };
+
+  const handleDeleteVehicle = async (vehicle) => {
+    if(!window.confirm(`¿Estás seguro de eliminar el vehículo ${vehicle.brand} ${vehicle.model}? Esta acción no se puede deshacer.`)) return;
+    
+    setLoading(true);
+    try {
+      // 1. Intentar borrar las imágenes de Storage
+      if(vehicle.docURL) {
+        try { await deleteObject(ref(storage, vehicle.docURL)); } catch(e){ console.warn('Imagen doc no encontrada o error', e); }
+      }
+      if(vehicle.bikeURL) {
+        try { await deleteObject(ref(storage, vehicle.bikeURL)); } catch(e){ console.warn('Imagen moto no encontrada o error', e); }
+      }
+
+      // 2. Borrar documento de Firestore
+      await deleteDoc(doc(db, 'vehicles', vehicle.id));
+
+      // 3. Actualizar estado local
+      setVehicles(prev => prev.filter(v => v.id !== vehicle.id));
+      showToast('Vehículo eliminado correctamente', 'success');
+    } catch (error) {
+      console.error(error);
+      showToast('Error al eliminar vehículo', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if(!user) return <div className="card">Debes iniciar sesión</div>
 
   return (
     <main className="profile-container">
@@ -108,8 +171,8 @@ export default function Profile(){
           <div className="profile-field"><strong>Banco:</strong> <span id="profileBank">{profile?.bank}</span></div>
           <div className="profile-field"><strong>N° de Cuenta:</strong> <span id="profileAccountNumber">{profile?.account_number}</span></div>
           <div style={{marginTop:12}}>
-            <label>Subir foto de perfil (se comprimirá automáticamente)</label>
-            <input type="file" accept="image/*" onChange={handleFile} />
+            <label>Subir foto de perfil (JPG, PNG)</label>
+            <input type="file" accept="image/png, image/jpeg, image/webp" onChange={handleFile} />
             {loading && <p>Subiendo...</p>}
             {uploadProgress > 0 && <div className="progress-bar"><div className="progress-fill" style={{width: `${uploadProgress}%`}}>{uploadProgress}%</div></div>}
           </div>
@@ -142,8 +205,19 @@ export default function Profile(){
                 </div>}
               </div>
               <div className="vehicle-actions">
-                <button className="btn-sm edit-vehicle-btn">Editar</button>
-                <button className="btn-sm">Eliminar</button>
+                <button 
+                  className="btn-sm edit-vehicle-btn" 
+                  onClick={() => handleEditVehicle(v)}
+                >
+                  Editar
+                </button>
+                <button 
+                  className="btn-sm" 
+                  onClick={() => handleDeleteVehicle(v)}
+                  style={{backgroundColor: '#e74c3c'}}
+                >
+                  Eliminar
+                </button>
               </div>
             </div>
           ))}
