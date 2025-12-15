@@ -48,39 +48,64 @@ export default function Register(){
       await updateProfile(userCred.user,{displayName: form.fullname});
       // send verification email
       await sendEmailVerification(userCred.user);
-      // ensure auth token is ready before writing to Firestore
-      try{
-        await userCred.user.getIdToken(true);
-      }catch(e){ /* non-blocking: will attempt write anyway */ }
-      // Save profile in Firestore mirroring backend model fields
-      try{
-        await setDoc(doc(db,'users', userCred.user.uid),{
-        fullname: form.fullname,
-        id_type: form.id_type,
-        id_number: form.id_number,
-        phone_local: form.phone_local || null,
-        phone_mobile: form.phone_mobile,
-        email: form.email,
-        address_home: form.address_home,
-        address_office: form.address_office || null,
-        bank: form.bank,
-        account_number: form.account_number,
-        created_at: new Date().toISOString(),
-        last_login: null,
-        photoURL: null,
-        // payment fields
-        hasPaid: false,
-        lastPayment: null
-        });
-      }catch(err){
-        // Provide clearer error message for permission issues
-        if(err && err.code && err.code.includes('permission')){
-          showToast('Error de permisos: revisa las reglas de Firestore en la consola de Firebase.', 'error');
-        }else{
-          throw err;
-        }
-      }
+
+      // Redirect immediately to profile so user sees the app UX even if Firestore write takes a moment
       nav('/profile');
+
+      // Try to save the profile to Firestore in background with retries in case auth token
+      // hasn't propagated to rules yet. This avoids blocking the UI and reduces "permission" errors.
+      (async function saveUserDocWithRetries(){
+        const maxRetries = 3;
+        const delay = ms => new Promise(res => setTimeout(res, ms));
+        let lastErr = null;
+        for(let attempt=1; attempt<=maxRetries; attempt++){
+          try{
+            // Force refresh token on first try and on subsequent retries
+            try{ await userCred.user.getIdToken(true); }catch(e){ /* continue to attempt write */ }
+
+            await setDoc(doc(db,'users', userCred.user.uid),{
+              fullname: form.fullname,
+              id_type: form.id_type,
+              id_number: form.id_number,
+              phone_local: form.phone_local || null,
+              phone_mobile: form.phone_mobile,
+              email: form.email,
+              address_home: form.address_home,
+              address_office: form.address_office || null,
+              bank: form.bank,
+              account_number: form.account_number,
+              created_at: new Date().toISOString(),
+              last_login: null,
+              photoURL: null,
+              hasPaid: false,
+              lastPayment: null
+            });
+            // Success: exit loop and log success
+            console.info('Firestore: user document created for', userCred.user.uid);
+            showToast('Perfil guardado correctamente.', 'success');
+            return;
+          }catch(err){
+            lastErr = err;
+            console.warn(`Firestore write attempt ${attempt} failed:`, err);
+            // If permission error or unauthenticated, wait and retry; otherwise stop retrying
+            const code = (err && (err.code || err.message || '')).toString().toLowerCase();
+            if(code.includes('permission') || code.includes('unauthenticated') || attempt < maxRetries){
+              // small backoff
+              await delay(800 * attempt);
+              continue;
+            }else{
+              break;
+            }
+          }
+        }
+        // After retries, if still failing, show toast so developer/user can inspect rules
+        if(lastErr){
+          const msg = lastErr && (lastErr.message || lastErr.toString()) || 'Error desconocido';
+          const code = lastErr && (lastErr.code || '').toString();
+          showToast(`No se pudo guardar el perfil en Firestore: ${code} ${msg}`, 'error');
+          console.error('Firestore save user error:', {code, message: msg, raw: lastErr});
+        }
+      })();
     }catch(err){
       showToast(err.message || 'Error', 'error');
     }finally{setLoading(false)}
