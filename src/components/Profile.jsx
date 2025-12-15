@@ -55,20 +55,32 @@ export default function Profile(){
     if(!file) return;
     if(!auth.currentUser) return showToast('Debes iniciar sesión', 'warn');
 
-    // --- VALIDACIONES DE IMAGEN ---
-    // 1. Validar formatos específicos (Whitelist)
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-    if (!allowedTypes.includes(file.type)) {
-        showToast('Formato no permitido. Solo se aceptan JPG, PNG o WEBP.', 'error');
+    // --- VALIDACIONES DE SEGURIDAD (MIME + Extensión) ---
+    
+    // 1. Validar Extensión del nombre (Bloqueo directo a SVG y otros)
+    const fileName = file.name.toLowerCase();
+    const validExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
+
+    if (!hasValidExtension) {
+        showToast('Formato de archivo no válido. Solo se permiten imágenes (JPG, PNG, WEBP).', 'error');
         e.target.value = ''; // Limpiar el input
         return;
     }
 
-    // 2. Validar tamaño (Máximo 10MB)
+    // 2. Validar MIME Type (Doble verificación)
+    const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!validMimeTypes.includes(file.type)) {
+         showToast('El tipo de archivo no es una imagen válida.', 'error');
+         e.target.value = ''; 
+         return;
+    }
+
+    // 3. Validar tamaño (Máximo 10MB)
     const maxSizeInBytes = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSizeInBytes) {
         showToast('La imagen es demasiado pesada. El máximo permitido es 10MB.', 'error');
-        e.target.value = ''; // Limpiar el input
+        e.target.value = ''; 
         return;
     }
 
@@ -172,7 +184,11 @@ export default function Profile(){
           <div className="profile-field"><strong>N° de Cuenta:</strong> <span id="profileAccountNumber">{profile?.account_number}</span></div>
           <div style={{marginTop:12}}>
             <label>Subir foto de perfil (JPG, PNG)</label>
-            <input type="file" accept="image/png, image/jpeg, image/webp" onChange={handleFile} />
+            <input 
+              type="file" 
+              accept="image/png, image/jpeg, image/webp, .jpg, .jpeg, .png, .webp" 
+              onChange={handleFile} 
+            />
             {loading && <p>Subiendo...</p>}
             {uploadProgress > 0 && <div className="progress-bar"><div className="progress-fill" style={{width: `${uploadProgress}%`}}>{uploadProgress}%</div></div>}
           </div>

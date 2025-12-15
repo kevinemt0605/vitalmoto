@@ -57,7 +57,7 @@ export default function VehicleForm(){
 
   const onChange = e => setForm({...form,[e.target.name]: e.target.value});
 
-  // --- FUNCIÓN DE VALIDACIÓN DE ARCHIVOS ---
+  // --- FUNCIÓN DE VALIDACIÓN DE ARCHIVOS MEJORADA ---
   const validateAndSetFile = (e, setFileState) => {
     const file = e.target.files[0];
     if (!file) {
@@ -65,20 +65,32 @@ export default function VehicleForm(){
         return;
     }
 
-    // 1. Validar formatos específicos (Whitelist)
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-    if (!allowedTypes.includes(file.type)) {
-        showToast('Formato no permitido. Solo se aceptan JPG, PNG o WEBP.', 'error');
+    // 1. Validar Extensión (Bloqueo SVG explícito)
+    const fileName = file.name.toLowerCase();
+    const validExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
+
+    if (!hasValidExtension) {
+        showToast('Error: Formato no permitido. Solo imágenes JPG, PNG, WEBP.', 'error');
         e.target.value = ''; // Resetear el input
         setFileState(null);
         return;
     }
 
-    // 2. Validar tamaño (Máximo 10MB)
+    // 2. Validar MIME Type
+    const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!validMimeTypes.includes(file.type)) {
+        showToast('Error: El archivo no es una imagen válida.', 'error');
+        e.target.value = ''; 
+        setFileState(null);
+        return;
+    }
+
+    // 3. Validar tamaño (Máximo 10MB)
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
         showToast('Error: La imagen es demasiado pesada (Máximo 10MB)', 'error');
-        e.target.value = ''; // Resetear el input
+        e.target.value = ''; 
         setFileState(null);
         return;
     }
@@ -266,7 +278,7 @@ export default function VehicleForm(){
           <label>Foto de documentos {editingId ? '(dejar vacío para mantener actual)' : '(subir JPG, PNG)'}</label>
           <input 
             type="file" 
-            accept="image/png, image/jpeg, image/webp" 
+            accept="image/png, image/jpeg, image/webp, .jpg, .jpeg, .png, .webp" 
             onChange={(e) => validateAndSetFile(e, setDocFile)} 
             required={!editingId} 
           />
@@ -278,7 +290,7 @@ export default function VehicleForm(){
           <label>Foto de la moto {editingId ? '(dejar vacío para mantener actual)' : '(subir JPG, PNG)'}</label>
           <input 
             type="file" 
-            accept="image/png, image/jpeg, image/webp" 
+            accept="image/png, image/jpeg, image/webp, .jpg, .jpeg, .png, .webp" 
             onChange={(e) => validateAndSetFile(e, setBikeFile)} 
             required={!editingId} 
           />
