@@ -6,6 +6,34 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { isEmailValid, isIdNumberValid, isPhoneValid, isAccountNumberValid } from '../utils/validators';
 import showToast from '../utils/toast';
 
+const VENEZUELA_BANKS = [
+  { code: '0001', name: 'Banco Central de Venezuela (BCV)' },
+  { code: '0102', name: 'Banco de Venezuela (BDV)' },
+  { code: '0104', name: 'Banco Venezolano de Crédito (BVC)' },
+  { code: '0105', name: 'Banco Mercantil' },
+  { code: '0108', name: 'Banco Provincial (BBVA)' },
+  { code: '0114', name: 'Bancaribe' },
+  { code: '0115', name: 'Banco Exterior' },
+  { code: '0128', name: 'Banco Caroní' },
+  { code: '0134', name: 'Banesco Banco Universal' },
+  { code: '0137', name: 'Sofitasa' },
+  { code: '0138', name: 'Banco Plaza' },
+  { code: '0146', name: 'Bangente' },
+  { code: '0151', name: 'Banco Fondo Común (BFC)' },
+  { code: '0156', name: '100% Banco' },
+  { code: '0157', name: 'Del Sur Banco Universal' },
+  { code: '0163', name: 'Banco del Tesoro' },
+  { code: '0166', name: 'Banco Agrícola de Venezuela' },
+  { code: '0168', name: 'Bancrecer' },
+  { code: '0169', name: 'Mi Banco, Banco Microfinanciero C.A' },
+  { code: '0171', name: 'Banco Activo' },
+  { code: '0172', name: 'Bancamiga' },
+  { code: '0174', name: 'Banplus' },
+  { code: '0175', name: 'Banco Bicentenario del Pueblo' },
+  { code: '0177', name: 'Banco de la Fuerza Armada Nacional Bolivariana (BANFANB)' },
+  { code: '0191', name: 'Banco Nacional de Crédito (BNC)' }
+];
+
 export default function Register(){
   const [form, setForm] = React.useState({
     fullname: '',
@@ -34,8 +62,19 @@ export default function Register(){
       if(!isEmailValid(form.email)) throw new Error('Email inválido');
       if(!isIdNumberValid(form.id_number)) throw new Error('Número de identificación inválido');
       if(!isPhoneValid(form.phone_local) || !isPhoneValid(form.phone_mobile)) throw new Error('Teléfono inválido');
-      if(!isAccountNumberValid(form.account_number)) throw new Error('Número de cuenta inválido (solo dígitos, 6-30)');
+      if(!isAccountNumberValid(form.account_number)) throw new Error('Número de cuenta inválido (solo dígitos, 20 caracteres)');
       if(form.password !== form.confirm_password) throw new Error('Las contraseñas no coinciden');
+
+      // --- VALIDACIÓN DE BANCO ---
+      if (!form.bank) throw new Error('Debes seleccionar un banco');
+      
+      const selectedBankObj = VENEZUELA_BANKS.find(b => b.name === form.bank);
+      if (selectedBankObj) {
+        // Validar que la cuenta empiece por el código del banco
+        if (!form.account_number.startsWith(selectedBankObj.code)) {
+          throw new Error(`El número de cuenta no coincide con el banco seleccionado. Para ${selectedBankObj.name} debe comenzar por ${selectedBankObj.code}`);
+        }
+      }
 
       // --- VALIDACIÓN DE UNICIDAD (Segura) ---
       // Creamos un ID compuesto, ej: "V-12345678"
@@ -81,7 +120,7 @@ export default function Register(){
               email: form.email,
               address_home: form.address_home,
               address_office: form.address_office || null,
-              bank: form.bank,
+              bank: form.bank, // Se guarda el nombre del banco
               account_number: form.account_number,
               created_at: new Date().toISOString(),
               last_login: null,
@@ -92,7 +131,6 @@ export default function Register(){
             });
 
             // 2. Guardar en Registro de IDs (Reservar la cédula)
-            // Esto evita que otro se registre con la misma cédula en el futuro
             await setDoc(doc(db, 'id_registry', compositeId), {
               uid: userCred.user.uid,
               registeredAt: new Date().toISOString()
@@ -165,22 +203,33 @@ export default function Register(){
               <label htmlFor="address_office">Dirección Oficina</label>
               <textarea id="address_office" name="address_office" value={form.address_office} onChange={onChange}></textarea>
             </div>
+            
+            {/* --- SECCIÓN BANCO MODIFICADA --- */}
             <div className="input-group">
               <label htmlFor="bank">Banco *</label>
-              <input type="text" id="bank" name="bank" value={form.bank} onChange={onChange} required />
+              <select id="bank" name="bank" value={form.bank} onChange={onChange} required>
+                <option value="">Seleccione un banco</option>
+                {VENEZUELA_BANKS.map(bank => (
+                  <option key={bank.code} value={bank.name}>
+                    {bank.code} - {bank.name}
+                  </option>
+                ))}
+              </select>
             </div>
+            
             <div className="input-group">
               <label htmlFor="account_number">N° de Cuenta (20 dígitos) *</label>
-              <input type="text" id="account_number" name="account_number" value={form.account_number} onChange={onChange} required minLength={6} maxLength={30} />
+              <input type="text" id="account_number" name="account_number" value={form.account_number} onChange={onChange} required minLength={20} maxLength={20} placeholder="0102..." />
             </div>
-                <div className="input-group">
-                  <label htmlFor="password">Contraseña *</label>
-                  <input type="password" id="password" name="password" value={form.password} onChange={onChange} required />
-                </div>
-                <div className="input-group">
-                  <label htmlFor="confirm_password">Confirmar Contraseña *</label>
-                  <input type="password" id="confirm_password" name="confirm_password" value={form.confirm_password} onChange={onChange} required />
-                </div>
+            
+            <div className="input-group">
+              <label htmlFor="password">Contraseña *</label>
+              <input type="password" id="password" name="password" value={form.password} onChange={onChange} required />
+            </div>
+            <div className="input-group">
+              <label htmlFor="confirm_password">Confirmar Contraseña *</label>
+              <input type="password" id="confirm_password" name="confirm_password" value={form.confirm_password} onChange={onChange} required />
+            </div>
             <button type="submit" className="btn-primario btn-full" disabled={loading}>{loading? 'Creando...':'Registrarse'}</button>
           </form>
           <p>¿Ya tienes una cuenta? <a href="/login">Inicia sesión</a></p>
