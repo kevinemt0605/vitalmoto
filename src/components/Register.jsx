@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom'; // Agregado Link
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore'; 
@@ -49,6 +49,7 @@ export default function Register(){
     password: '',
     confirm_password: ''
   });
+  const [acceptedTerms, setAcceptedTerms] = React.useState(false); // Estado para checkbox
   const [loading, setLoading] = React.useState(false);
   const nav = useNavigate();
 
@@ -65,23 +66,23 @@ export default function Register(){
       if(!isAccountNumberValid(form.account_number)) throw new Error('Número de cuenta inválido (solo dígitos, 20 caracteres)');
       if(form.password !== form.confirm_password) throw new Error('Las contraseñas no coinciden');
 
+      // --- VALIDACIÓN DE TÉRMINOS ---
+      if(!acceptedTerms) throw new Error('Debes leer y aceptar los Términos y Condiciones para continuar.');
+
       // --- VALIDACIÓN DE BANCO ---
       if (!form.bank) throw new Error('Debes seleccionar un banco');
       
       const selectedBankObj = VENEZUELA_BANKS.find(b => b.name === form.bank);
       if (selectedBankObj) {
-        // Validar que la cuenta empiece por el código del banco
         if (!form.account_number.startsWith(selectedBankObj.code)) {
           throw new Error(`El número de cuenta no coincide con el banco seleccionado. Para ${selectedBankObj.name} debe comenzar por ${selectedBankObj.code}`);
         }
       }
 
-      // --- VALIDACIÓN DE UNICIDAD (Segura) ---
-      // Creamos un ID compuesto, ej: "V-12345678"
+      // --- VALIDACIÓN DE UNICIDAD ---
       const compositeId = `${form.id_type}-${form.id_number}`;
       const idRegistryRef = doc(db, 'id_registry', compositeId);
       
-      // Intentamos leer este documento. Las reglas permiten 'get' público.
       const idSnapshot = await getDoc(idRegistryRef);
       if (idSnapshot.exists()) {
         throw new Error(`La cédula ${form.id_type}-${form.id_number} ya está registrada.`);
@@ -90,13 +91,9 @@ export default function Register(){
       // --- CREACIÓN DE USUARIO (Auth) ---
       const userCred = await createUserWithEmailAndPassword(auth, form.email, form.password);
       
-      // Actualizar nombre visual
       await updateProfile(userCred.user,{displayName: form.fullname});
-      
-      // Enviar email de verificación
       await sendEmailVerification(userCred.user);
 
-      // Redirigir inmediatamente
       nav('/profile');
 
       // --- GUARDADO EN FIRESTORE (Background) ---
@@ -107,10 +104,9 @@ export default function Register(){
 
         for(let attempt=1; attempt<=maxRetries; attempt++){
           try{
-            // Forzar refresco de token
             try{ await userCred.user.getIdToken(true); }catch(e){}
 
-            // 1. Guardar Perfil de Usuario
+            // 1. Guardar Perfil de Usuario (Incluyendo que aceptó términos)
             await setDoc(doc(db,'users', userCred.user.uid),{
               fullname: form.fullname,
               id_type: form.id_type,
@@ -120,17 +116,19 @@ export default function Register(){
               email: form.email,
               address_home: form.address_home,
               address_office: form.address_office || null,
-              bank: form.bank, // Se guarda el nombre del banco
+              bank: form.bank,
               account_number: form.account_number,
               created_at: new Date().toISOString(),
               last_login: null,
               photoURL: null,
               hasPaid: false,
               lastPayment: null,
-              role: 'user'
+              role: 'user',
+              acceptedTerms: true, // Registro de aceptación legal
+              acceptedTermsDate: new Date().toISOString()
             });
 
-            // 2. Guardar en Registro de IDs (Reservar la cédula)
+            // 2. Guardar en Registro de IDs
             await setDoc(doc(db, 'id_registry', compositeId), {
               uid: userCred.user.uid,
               registeredAt: new Date().toISOString()
@@ -204,7 +202,7 @@ export default function Register(){
               <textarea id="address_office" name="address_office" value={form.address_office} onChange={onChange}></textarea>
             </div>
             
-            {/* --- SECCIÓN BANCO MODIFICADA --- */}
+            {/* SECCIÓN BANCO */}
             <div className="input-group">
               <label htmlFor="bank">Banco *</label>
               <select id="bank" name="bank" value={form.bank} onChange={onChange} required>
@@ -230,6 +228,22 @@ export default function Register(){
               <label htmlFor="confirm_password">Confirmar Contraseña *</label>
               <input type="password" id="confirm_password" name="confirm_password" value={form.confirm_password} onChange={onChange} required />
             </div>
+
+            {/* --- CHECKBOX TÉRMINOS Y CONDICIONES --- */}
+            <div className="input-group" style={{display:'flex', alignItems:'center', gap:'10px', marginTop:'15px', marginBottom:'15px'}}>
+              <input 
+                type="checkbox" 
+                id="terms" 
+                checked={acceptedTerms} 
+                onChange={e=>setAcceptedTerms(e.target.checked)} 
+                required 
+                style={{width:'20px', height:'20px', cursor:'pointer', margin:0}} 
+              />
+              <label htmlFor="terms" style={{marginBottom:0, fontWeight:'normal', fontSize:'0.95rem', cursor:'pointer'}}>
+                He leído y acepto los <Link to="/terms" target="_blank" style={{color:'var(--color-primario)', textDecoration:'underline', fontWeight:'bold'}}>Términos y Condiciones</Link>
+              </label>
+            </div>
+
             <button type="submit" className="btn-primario btn-full" disabled={loading}>{loading? 'Creando...':'Registrarse'}</button>
           </form>
           <p>¿Ya tienes una cuenta? <a href="/login">Inicia sesión</a></p>

@@ -7,6 +7,7 @@ import VehicleForm from './components/VehicleForm';
 import Header from './components/Header';
 import Home from './components/Home';
 import Admin from './components/Admin';
+import Terms from './components/Terms';
 import './styles.css';
 
 export default function App(){
@@ -20,6 +21,7 @@ export default function App(){
         <Route path="/profile" element={<Profile />} />
         <Route path="/vehicle" element={<VehicleForm />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/terms" element={<Terms />} />
       </Routes>
     </div>
   )
