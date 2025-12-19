@@ -12,7 +12,6 @@ export default function Home(){
   ];
 
   // --- CONFIGURACIÓN DE LOS SERVICIOS (SLIDE) ---
-  // Corrección de extensiones según tu carpeta de imágenes
   const servicios = [
     {
       title: 'Diagnóstico y Reparación', 
@@ -21,17 +20,17 @@ export default function Home(){
     },
     {
       title: 'Personalización', 
-      img: '/img/personalizacion.jpeg', // Corregido a .jpeg
+      img: '/img/personalizacion.jpeg', 
       text: 'Transformamos tu moto: modificaciones estéticas y mejoras de rendimiento a tu medida.'
     },
     {
       title: 'Mantenimiento Preventivo', 
-      img: '/img/mantenimiento.jpeg', // Corregido a .jpeg
+      img: '/img/mantenimiento.jpeg', 
       text: 'Revisiones periódicas, cambio de aceite, filtros y bujías para tu seguridad.'
     },
     {
       title: 'Transparencia', 
-      img: '/img/transparencia.png', // Corregido a .png
+      img: '/img/transparencia.png', 
       text: 'Explicamos cada trabajo y ofrecemos presupuestos claros, sin sorpresas.'
     },
     {
@@ -83,7 +82,7 @@ export default function Home(){
         </div>
       </footer>
 
-      {/* --- AVISO DE EMPLEO (MODAL MEJORADO) --- */}
+      {/* --- AVISO DE EMPLEO (MODAL RESPONSIVE) --- */}
       {showHiringModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -91,14 +90,16 @@ export default function Home(){
           zIndex: 9999,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           backdropFilter: 'blur(5px)',
-          padding: '20px'
+          padding: '15px' // Padding externo para asegurar margen en móviles
         }}>
           <div style={{
             backgroundColor: '#fff', 
             borderRadius: '16px', 
-            padding: '30px',
-            maxWidth: '500px', 
-            width: '100%', 
+            padding: '25px 20px', // Padding interno reducido ligeramente
+            maxWidth: '450px',     // Ancho máximo un poco más angosto
+            width: '100%',         // Ocupa el ancho disponible hasta el máximo
+            maxHeight: '85vh',     // IMPORTANTE: Altura máxima del 85% de la pantalla
+            overflowY: 'auto',     // IMPORTANTE: Permite scroll si el contenido es muy alto
             textAlign: 'center',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             position: 'relative',
@@ -107,8 +108,10 @@ export default function Home(){
             <button 
               onClick={() => setShowHiringModal(false)}
               style={{
-                position: 'absolute', top: '15px', right: '15px',
-                background: 'transparent', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#999'
+                position: 'absolute', top: '10px', right: '10px',
+                background: '#f1f1f1', border: 'none', borderRadius: '50%',
+                width: '30px', height: '30px', fontSize: '1.1rem', 
+                cursor: 'pointer', color: '#555', display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}
             >✕</button>
 
@@ -117,15 +120,15 @@ export default function Home(){
               <img 
                 src="/img/Untitled 01 Artboard 1.png" 
                 alt="VitalMoto Logo" 
-                style={{width: '100px', height: 'auto', objectFit: 'contain'}} 
+                style={{width: '80px', height: 'auto', objectFit: 'contain'}} 
               />
             </div>
 
-            <h2 style={{color: '#2c3e50', marginBottom: '5px', fontSize: '1.6rem', fontWeight: '800'}}>
+            <h2 style={{color: '#2c3e50', marginBottom: '8px', fontSize: '1.4rem', fontWeight: '800', lineHeight: '1.2'}}>
               Forma parte de nuestro gran equipo VM
             </h2>
             
-            <p style={{color: '#546e7a', fontSize: '1rem', marginBottom: '20px'}}>
+            <p style={{color: '#546e7a', fontSize: '0.95rem', marginBottom: '15px'}}>
               Estamos en busca de personal calificado en las siguientes áreas:
             </p>
 
@@ -134,19 +137,19 @@ export default function Home(){
               display: 'flex', 
               flexWrap: 'wrap', 
               justifyContent: 'center', 
-              gap: '10px', 
-              marginBottom: '25px'
+              gap: '8px', 
+              marginBottom: '20px'
             }}>
               {vacantes.map((vacante, index) => (
                 <span key={index} style={{
                   backgroundColor: '#f1f5f9',
                   color: '#334155',
-                  padding: '8px 15px',
-                  borderRadius: '20px',
-                  fontSize: '0.9rem',
+                  padding: '6px 12px',
+                  borderRadius: '15px',
+                  fontSize: '0.85rem',
                   fontWeight: '600',
                   border: '1px solid #e2e8f0',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                  whiteSpace: 'nowrap' // Evita que los textos cortos se rompan feo
                 }}>
                   {vacante}
                 </span>
@@ -155,17 +158,17 @@ export default function Home(){
 
             {/* Caja del correo */}
             <div style={{
-              backgroundColor: '#fff7ed', // Fondo naranja muy suave
-              padding: '15px', 
+              backgroundColor: '#fff7ed', 
+              padding: '12px', 
               borderRadius: '10px', 
-              marginBottom: '25px', 
-              border: '2px dashed #fdba74' // Borde naranja suave
+              marginBottom: '20px', 
+              border: '2px dashed #fdba74'
             }}>
-              <p style={{margin: 0, fontSize: '0.9rem', color: '#78909c', marginBottom: '5px', fontWeight: '600'}}>
+              <p style={{margin: 0, fontSize: '0.85rem', color: '#78909c', marginBottom: '3px', fontWeight: '600'}}>
                 Envía tu CV al correo:
               </p>
               <a href="mailto:vitalmoto.rrhh@outlook.com" style={{
-                fontSize: '1.2rem', fontWeight: 'bold', color: '#e67e22', textDecoration: 'none', display: 'block', wordBreak: 'break-all'
+                fontSize: '1rem', fontWeight: 'bold', color: '#e67e22', textDecoration: 'none', display: 'block', wordBreak: 'break-all'
               }}>
                 vitalmoto.rrhh@outlook.com
               </a>
@@ -177,16 +180,15 @@ export default function Home(){
                 backgroundColor: '#2c3e50', 
                 color: 'white', 
                 border: 'none', 
-                padding: '12px 35px', 
+                padding: '12px 30px', 
                 borderRadius: '50px', 
-                fontSize: '1rem', 
+                fontSize: '0.95rem', 
                 cursor: 'pointer', 
                 fontWeight: 'bold', 
-                transition: 'transform 0.2s',
-                boxShadow: '0 4px 6px rgba(50, 50, 93, 0.11)'
+                boxShadow: '0 4px 6px rgba(50, 50, 93, 0.11)',
+                width: '100%', // Botón ancho completo en móvil para facilitar el clic
+                maxWidth: '200px'
               }}
-              onMouseOver={(e) => e.target.style.transform = 'scale(1.02)'}
-              onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
             >
               Aceptar
             </button>
