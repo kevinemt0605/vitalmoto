@@ -4,7 +4,15 @@ export default function Home(){
   // Estado para controlar la visibilidad del aviso de empleo
   const [showHiringModal, setShowHiringModal] = React.useState(true);
 
+  // Lista de vacantes solicitadas
+  const vacantes = [
+    "Supervisor", "Analista", "Recepcionista", 
+    "RRHH", "Informática", "Redes", 
+    "Atención al Cliente", "Motorizado", "Gerentes"
+  ];
+
   // --- CONFIGURACIÓN DE LOS SERVICIOS (SLIDE) ---
+  // Corrección de extensiones según tu carpeta de imágenes
   const servicios = [
     {
       title: 'Diagnóstico y Reparación', 
@@ -13,17 +21,17 @@ export default function Home(){
     },
     {
       title: 'Personalización', 
-      img: '/img/personalizacion.jpeg', 
+      img: '/img/personalizacion.jpeg', // Corregido a .jpeg
       text: 'Transformamos tu moto: modificaciones estéticas y mejoras de rendimiento a tu medida.'
     },
     {
       title: 'Mantenimiento Preventivo', 
-      img: '/img/mantenimiento.jpeg', 
+      img: '/img/mantenimiento.jpeg', // Corregido a .jpeg
       text: 'Revisiones periódicas, cambio de aceite, filtros y bujías para tu seguridad.'
     },
     {
       title: 'Transparencia', 
-      img: '/img/transparencia.png', 
+      img: '/img/transparencia.png', // Corregido a .png
       text: 'Explicamos cada trabajo y ofrecemos presupuestos claros, sin sorpresas.'
     },
     {
@@ -75,21 +83,21 @@ export default function Home(){
         </div>
       </footer>
 
-      {/* --- AVISO DE EMPLEO (MODAL) --- */}
+      {/* --- AVISO DE EMPLEO (MODAL MEJORADO) --- */}
       {showHiringModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0,0,0,0.6)', 
           zIndex: 9999,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          backdropFilter: 'blur(4px)',
+          backdropFilter: 'blur(5px)',
           padding: '20px'
         }}>
           <div style={{
             backgroundColor: '#fff', 
             borderRadius: '16px', 
             padding: '30px',
-            maxWidth: '480px', 
+            maxWidth: '500px', 
             width: '100%', 
             textAlign: 'center',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
@@ -104,34 +112,60 @@ export default function Home(){
               }}
             >✕</button>
 
-            <div style={{marginBottom: '15px'}}>
+            {/* Logo */}
+            <div style={{marginBottom: '10px'}}>
               <img 
                 src="/img/Untitled 01 Artboard 1.png" 
                 alt="VitalMoto Logo" 
-                style={{width: '120px', height: 'auto', objectFit: 'contain'}} 
+                style={{width: '100px', height: 'auto', objectFit: 'contain'}} 
               />
             </div>
 
-            <h2 style={{color: '#2c3e50', marginBottom: '10px', fontSize: '1.8rem', fontWeight: '800'}}>
-              ¡Estamos Buscando Empleados!
+            <h2 style={{color: '#2c3e50', marginBottom: '5px', fontSize: '1.6rem', fontWeight: '800'}}>
+              Forma parte de nuestro gran equipo VM
             </h2>
-
-            <p style={{color: '#546e7a', fontSize: '1.05rem', lineHeight: '1.6', marginBottom: '25px'}}>
-              ¿Tienes experiencia y pasión por las motos? En <strong>VitalMoto</strong> estamos expandiendo nuestro equipo y queremos conocerte.
+            
+            <p style={{color: '#546e7a', fontSize: '1rem', marginBottom: '20px'}}>
+              Estamos en busca de personal calificado en las siguientes áreas:
             </p>
 
+            {/* GRID DE VACANTES (Badges) */}
             <div style={{
-              backgroundColor: '#f8f9fa', 
+              display: 'flex', 
+              flexWrap: 'wrap', 
+              justifyContent: 'center', 
+              gap: '10px', 
+              marginBottom: '25px'
+            }}>
+              {vacantes.map((vacante, index) => (
+                <span key={index} style={{
+                  backgroundColor: '#f1f5f9',
+                  color: '#334155',
+                  padding: '8px 15px',
+                  borderRadius: '20px',
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}>
+                  {vacante}
+                </span>
+              ))}
+            </div>
+
+            {/* Caja del correo */}
+            <div style={{
+              backgroundColor: '#fff7ed', // Fondo naranja muy suave
               padding: '15px', 
               borderRadius: '10px', 
               marginBottom: '25px', 
-              border: '2px dashed #cfd8dc'
+              border: '2px dashed #fdba74' // Borde naranja suave
             }}>
               <p style={{margin: 0, fontSize: '0.9rem', color: '#78909c', marginBottom: '5px', fontWeight: '600'}}>
-                Envíanos tu CV actualizado a:
+                Envía tu CV al correo:
               </p>
               <a href="mailto:vitalmoto.rrhh@outlook.com" style={{
-                fontSize: '1.3rem', fontWeight: 'bold', color: '#e67e22', textDecoration: 'none', display: 'block', wordBreak: 'break-all'
+                fontSize: '1.2rem', fontWeight: 'bold', color: '#e67e22', textDecoration: 'none', display: 'block', wordBreak: 'break-all'
               }}>
                 vitalmoto.rrhh@outlook.com
               </a>
@@ -140,7 +174,16 @@ export default function Home(){
             <button
               onClick={() => setShowHiringModal(false)}
               style={{
-                backgroundColor: '#2c3e50', color: 'white', border: 'none', padding: '14px 40px', borderRadius: '50px', fontSize: '1rem', cursor: 'pointer', fontWeight: 'bold', transition: 'transform 0.2s', boxShadow: '0 4px 6px rgba(50, 50, 93, 0.11)'
+                backgroundColor: '#2c3e50', 
+                color: 'white', 
+                border: 'none', 
+                padding: '12px 35px', 
+                borderRadius: '50px', 
+                fontSize: '1rem', 
+                cursor: 'pointer', 
+                fontWeight: 'bold', 
+                transition: 'transform 0.2s',
+                boxShadow: '0 4px 6px rgba(50, 50, 93, 0.11)'
               }}
               onMouseOver={(e) => e.target.style.transform = 'scale(1.02)'}
               onMouseOut={(e) => e.target.style.transform = 'scale(1)'}

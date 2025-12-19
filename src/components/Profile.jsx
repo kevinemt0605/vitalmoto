@@ -24,7 +24,7 @@ export default function Profile(){
     leftURL: 'Izq.',
     rightURL: 'Der.',
     tachoURL: 'Tacómetro',
-    bikeURL: 'Moto (Gral)' // Compatibilidad antigua
+    bikeURL: 'Moto (Gral)'
   };
 
   React.useEffect(()=>{
@@ -65,7 +65,6 @@ export default function Profile(){
     if(!file) return;
     if(!auth.currentUser) return showToast('Debes iniciar sesión', 'warn');
 
-    // Validaciones
     const validExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
     const fileName = file.name.toLowerCase();
     if (!validExtensions.some(ext => fileName.endsWith(ext))) {
@@ -104,7 +103,6 @@ export default function Profile(){
     if(!window.confirm(`¿Eliminar ${vehicle.brand} ${vehicle.model}?`)) return;
     setLoading(true);
     try {
-      // Intentar borrar todas las imágenes posibles
       const imagesToDelete = [vehicle.docURL, vehicle.frontURL, vehicle.rearURL, vehicle.leftURL, vehicle.rightURL, vehicle.tachoURL, vehicle.bikeURL];
       for(const url of imagesToDelete){
         if(url && url.startsWith('http')) {
@@ -165,8 +163,9 @@ export default function Profile(){
         <div id="vehiclesList" className="vehicles-list">
           {vehicles.length === 0 && <div className="no-vehicles">No tienes vehículos registrados</div>}
           {vehicles.map(v=> (
-            <div className="vehicle-card" key={v.id} style={{padding:'15px', border:'1px solid #ddd', borderRadius:'8px', background:'#fff', marginBottom:'15px'}}>
-              {/* Encabezado del vehículo */}
+            // FIX: Añadido overflow:hidden al card para contener hijos
+            <div className="vehicle-card" key={v.id} style={{padding:'15px', border:'1px solid #ddd', borderRadius:'8px', background:'#fff', marginBottom:'15px', maxWidth: '100%', overflow: 'hidden'}}>
+              
               <div style={{borderBottom:'1px solid #eee', paddingBottom:'10px', marginBottom:'10px'}}>
                 <h3 style={{margin:0, color:'#333'}}>{v.brand} {v.model} ({v.year})</h3>
                 <span style={{background:'#eef', padding:'2px 8px', borderRadius:'4px', fontSize:'0.85rem', color:'#336699'}}>
@@ -174,7 +173,6 @@ export default function Profile(){
                 </span>
               </div>
 
-              {/* Datos Técnicos */}
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', fontSize:'0.9rem', color:'#555', marginBottom:'15px'}}>
                 <div><strong>Color:</strong> {v.color}</div>
                 <div><strong>Cilindraje:</strong> {v.displacement} cc</div>
@@ -185,11 +183,19 @@ export default function Profile(){
               
               {v.observations && <p style={{fontSize:'0.9rem', fontStyle:'italic', color:'#777'}}>Obs: {v.observations}</p>}
 
-              {/* Galería de Imágenes */}
-              <div style={{display:'flex', gap:'8px', overflowX:'auto', paddingBottom:'8px'}}>
+              {/* FIX: Contenedor de scroll horizontal responsivo */}
+              <div style={{
+                display:'flex', 
+                gap:'10px', 
+                overflowX:'auto', 
+                paddingBottom:'10px',
+                width: '100%',
+                WebkitOverflowScrolling: 'touch', // Scroll suave en iOS
+                scrollBehavior: 'smooth'
+              }}>
                 {['docURL', 'frontURL', 'rearURL', 'leftURL', 'rightURL', 'tachoURL'].map(key => (
                   v[key] && (
-                    <div key={key} style={{minWidth:'80px', textAlign:'center'}}>
+                    <div key={key} style={{minWidth:'80px', flexShrink: 0, textAlign:'center'}}>
                       <img src={v[key]} alt={photoLabels[key]} style={{width:'80px', height:'60px', objectFit:'cover', borderRadius:'4px', border:'1px solid #ccc'}} />
                       <div style={{fontSize:'0.75rem', marginTop:'2px'}}>{photoLabels[key]}</div>
                     </div>
