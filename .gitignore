@@ -1,7 +1,38 @@
+# --- Dependencias (Ignora node_modules en la raiz y en functions) ---
 node_modules/
+functions/node_modules/
+
+# --- Producción / Builds ---
 build/
+dist/
+.output/
+
+# --- Variables de Entorno y Secretos (CRÍTICO) ---
 .env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.*.local
+
+# --- Firebase (Logs y Caché) ---
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+firebase.json.backup
+
+# --- Logs de NPM / Yarn ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Editor / IDE ---
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Sistema Operativo ---
 .DS_Store
+Thumbs.db
