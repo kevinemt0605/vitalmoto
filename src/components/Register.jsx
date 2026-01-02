@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate, Link } from 'react-router-dom'; // Agregado Link
+import { useNavigate, Link } from 'react-router-dom';
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore'; 
@@ -49,8 +49,13 @@ export default function Register(){
     password: '',
     confirm_password: ''
   });
-  const [acceptedTerms, setAcceptedTerms] = React.useState(false); // Estado para checkbox
+  const [acceptedTerms, setAcceptedTerms] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  
+  // Estados para mostrar contraseña
+  const [showPass, setShowPass] = React.useState(false);
+  const [showConfirmPass, setShowConfirmPass] = React.useState(false);
+
   const nav = useNavigate();
 
   const onChange = e => setForm({...form,[e.target.name]:e.target.value});
@@ -106,7 +111,7 @@ export default function Register(){
           try{
             try{ await userCred.user.getIdToken(true); }catch(e){}
 
-            // 1. Guardar Perfil de Usuario (Incluyendo que aceptó términos)
+            // 1. Guardar Perfil de Usuario
             await setDoc(doc(db,'users', userCred.user.uid),{
               fullname: form.fullname,
               id_type: form.id_type,
@@ -124,7 +129,7 @@ export default function Register(){
               hasPaid: false,
               lastPayment: null,
               role: 'user',
-              acceptedTerms: true, // Registro de aceptación legal
+              acceptedTerms: true,
               acceptedTermsDate: new Date().toISOString()
             });
 
@@ -165,6 +170,7 @@ export default function Register(){
         <div className="login-box">
           <h2>Registro de Usuario</h2>
           <form id="registerForm" onSubmit={onSubmit}>
+            {/* ... INPUTS DE DATOS PERSONALES (IGUAL QUE ANTES) ... */}
             <div className="input-group">
               <label htmlFor="fullname">Nombres y Apellidos / Razón Social *</label>
               <input type="text" id="fullname" name="fullname" value={form.fullname} onChange={onChange} required />
@@ -202,7 +208,6 @@ export default function Register(){
               <textarea id="address_office" name="address_office" value={form.address_office} onChange={onChange}></textarea>
             </div>
             
-            {/* SECCIÓN BANCO */}
             <div className="input-group">
               <label htmlFor="bank">Banco *</label>
               <select id="bank" name="bank" value={form.bank} onChange={onChange} required>
@@ -220,16 +225,54 @@ export default function Register(){
               <input type="text" id="account_number" name="account_number" value={form.account_number} onChange={onChange} required minLength={20} maxLength={20} placeholder="0102..." />
             </div>
             
-            <div className="input-group">
+            {/* CONTRASEÑA CON TOGGLE */}
+            <div className="input-group" style={{position: 'relative'}}>
               <label htmlFor="password">Contraseña *</label>
-              <input type="password" id="password" name="password" value={form.password} onChange={onChange} required />
-            </div>
-            <div className="input-group">
-              <label htmlFor="confirm_password">Confirmar Contraseña *</label>
-              <input type="password" id="confirm_password" name="confirm_password" value={form.confirm_password} onChange={onChange} required />
+              <input 
+                type={showPass ? "text" : "password"} 
+                id="password" 
+                name="password" 
+                value={form.password} 
+                onChange={onChange} 
+                required 
+                style={{paddingRight: '40px'}}
+              />
+              <button 
+                type="button" 
+                onClick={() => setShowPass(!showPass)}
+                style={{
+                  position: 'absolute', right: '10px', top: '38px', 
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color:'#666'
+                }}
+              >
+                {showPass ? '👁️' : '🔒'}
+              </button>
             </div>
 
-            {/* --- CHECKBOX TÉRMINOS Y CONDICIONES --- */}
+            {/* CONFIRMAR CONTRASEÑA CON TOGGLE */}
+            <div className="input-group" style={{position: 'relative'}}>
+              <label htmlFor="confirm_password">Confirmar Contraseña *</label>
+              <input 
+                type={showConfirmPass ? "text" : "password"} 
+                id="confirm_password" 
+                name="confirm_password" 
+                value={form.confirm_password} 
+                onChange={onChange} 
+                required 
+                style={{paddingRight: '40px'}}
+              />
+              <button 
+                type="button" 
+                onClick={() => setShowConfirmPass(!showConfirmPass)}
+                style={{
+                  position: 'absolute', right: '10px', top: '38px', 
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color:'#666'
+                }}
+              >
+                {showConfirmPass ? '👁️' : '🔒'}
+              </button>
+            </div>
+
             <div className="input-group" style={{display:'flex', alignItems:'center', gap:'10px', marginTop:'15px', marginBottom:'15px'}}>
               <input 
                 type="checkbox" 
