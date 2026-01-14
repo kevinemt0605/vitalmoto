@@ -179,7 +179,7 @@ export default function Profile(){
       const max = tasaBCV + 1;
       if (isNaN(montoFloat) || montoFloat < min || montoFloat > max) {
         errors.monto = true;
-        showToast(`El monto debe ser exacto (Entre ${min.toFixed(2)} y ${max.toFixed(2)})`, 'error');
+        showToast(`El monto debe ser exacto (${tasaBCV})`, 'error');
       }
     }
 
